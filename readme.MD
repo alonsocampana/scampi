@@ -1,13 +1,17 @@
 
+# Self- and cross-attention for the prediction of metabolite-protein interactions
 
+![](arch.png)
 
-For prediction using the trained model:
+## Prediction using the trained model
 
 A csv file is passed as argument to the --data flag:
 
-```
+``` bash
 python scampi-predict.py --data /mnt/data/sample_interactions.csv
 ```
+
+It can be build on docker using the included dockerfile:
 
 build image
 ```bash
@@ -46,4 +50,11 @@ docker cp scampi:mnt/data/sample_interactions_preds.csv .
 Stop (and remove) the container
 ```bash
 docker container stop scampi && docker container rm scampi
+```
+
+## Training of the model
+(warning: it requires huge amounts of ram and time, depending on the configuration!):
+
+``` bash
+python scampi-train.py
 ```
