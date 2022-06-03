@@ -3,6 +3,9 @@
 
 ![](arch.png)
 
+The data and trained models can be downloaded from:
+https://drive.google.com/file/d/1Gqr5mpqspvbM3o2JC0Y-iYPZqc6u1A_b/view?usp=sharing
+
 ## Prediction using the trained model
 
 A csv file is passed as argument to the --data flag:
