@@ -4,7 +4,10 @@
 ![](arch.png)
 
 The data and trained models can be downloaded from:
+
 https://drive.google.com/file/d/1Gqr5mpqspvbM3o2JC0Y-iYPZqc6u1A_b/view?usp=sharing
+
+Once downlaodeded it has to be extracted on the app root folder
 
 ## Prediction using the trained model
 
