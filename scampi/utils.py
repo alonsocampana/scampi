@@ -55,19 +55,19 @@ class ProtPairsDataset(torch.utils.data.Dataset):
         """
         From a sequence as a string creates an array representation
         """
-        max_length = self.length
-        seq = list(seq)
-        posrr = np.array([self.AA_dict[aa] for aa in seq]).T
-        length = posrr.shape[1]
-        if length > max_length-2:
-            posrr = posrr[:, :max_length-2]
+        max_length = self.length # Retrieves length
+        seq = list(seq) # converts to list
+        posrr = np.array([self.AA_dict[aa] for aa in seq]).T # recalls the embeddings for each amino acid
+        length = posrr.shape[1] # the length is equal to the number of tokens
+        if length > max_length-2: # if the sequence is too long
+            posrr = posrr[:, :max_length-2] # truncates the sequence
             mask = np.concatenate(
                 [np.array([24]), np.ones(max_length-2), np.array([25])])
         else:
             mask = np.concatenate([np.array([21]), np.ones(
                 length), np.array([24]), np.zeros(max_length-2-length)])
         posrr = np.concatenate(
-            [np.zeros([128, 1]), posrr, np.zeros([128, 1])], axis=1)
+            [np.zeros([128, 1]), posrr, np.zeros([128, 1])], axis=1) # adds padding to the sequence
         prot_arr = np.zeros([128, max_length])
         prot_arr[:posrr.shape[0], :posrr.shape[1]] = posrr
         final_embedding = (prot_arr + self.positional_encoding).T
@@ -75,7 +75,7 @@ class ProtPairsDataset(torch.utils.data.Dataset):
 
     def get_positional_encoding(self, seq_length, n_features):
         """
-        Creates the synusoid embedding of dimensions seq_length x n_features
+        Creates the synoid embedding of dimensions seq_length x n_features
         """
         positional_encoding_1 = np.sin(
             np.tile(np.arange(0, seq_length), [n_features//2, 1])
@@ -124,7 +124,8 @@ class ProtPairsDatasetSnap(torch.utils.data.Dataset):
         with open("AAdict.pkl", "rb") as f:
             self.AA_dict = pickle.load(f)
         self.length = length
-        self.AA_dict["U"] = self.AA_dict["X"]
+        # Replace some infrequent tokens by X
+        self.AA_dict["U"] = self.AA_dict["X"] 
         self.AA_dict["B"] = self.AA_dict["X"]
         self.AA_dict["Z"] = self.AA_dict["X"]
         self.AA_int = {key: i+1 for i, key in enumerate((self.AA_dict.keys()))}
@@ -267,6 +268,7 @@ def init_weights(m):
 
 def download_file_from_google_drive(id, destination):
     """
+    Helper function for downloading information from google drive.
     source: https://stackoverflow.com/questions/38511444/python-download-files-from-google-drive-using-url
     """
     URL = "https://docs.google.com/uc?export=download"
@@ -313,6 +315,9 @@ def select_first(*args):
 
 
 def progress_bar(current, total, length=50):
+    """
+    Helper function for creating progress bars
+    """
     progress = "█"
     fill = "_"
     frac = int(current/total*length)
@@ -333,29 +338,29 @@ class MetaboliteProcessor():
 
     def __init__(self, scale=5, nnif_factor = 500):
         self.mms = MinMaxScaler([-scale, scale])
-        self.nnif_factor = nnif_factor
+        self.nnif_factor = nnif_factor # Maximal odds ratio for the majority class of a binary feature to be considered informative.
         self.fitted = False
 
     def fit(self, metabolite_properties):
         """
         Fits the processor to a DataFrame of metabolite features with the correct format.
         """
-        met_props = metabolite_properties.copy()
+        met_props = metabolite_properties.copy() # creates a copy of the dataframe
         self.mms.fit(metabolite_properties.iloc[:, 1:23])
         met_props.iloc[:, 1:23] = self.mms.transform(
             metabolite_properties.iloc[:, 1:23])
         fingerprint_features = (met_props["Fingerprint2D"]
-                                .apply(self.to_bits_decode))
+                                .apply(self.to_bits_decode)) # decodes the fingerprint to a set of binary features
         fingerprint_features = pd.DataFrame(np.stack(fingerprint_features.values))
         length = metabolite_properties.shape[0]
-        self.threshold = length//self.nnif_factor
+        self.threshold = length//self.nnif_factor # threshold for a feature to be considered non-informative
         is_fp_always_zero = fingerprint_features.sum() < self.threshold
         is_fp_always_one = fingerprint_features.sum() > length - self.threshold
-        self.is_informative = ~is_fp_always_zero & ~is_fp_always_one
+        self.is_informative = ~is_fp_always_zero & ~is_fp_always_one # feature no be considered informative
         met_props = (pd.concat([met_props.drop("Fingerprint2D", axis=1).reset_index(drop=True),
                                            fingerprint_features.iloc[:,self.is_informative.to_numpy()]], axis=1))
-        self.colmeans = met_props.mean(axis=0)
-        self.cols_to_dummy = met_props.loc[:,met_props.isna().sum() >0].columns.to_numpy()
+        self.colmeans = met_props.mean(axis=0) # means for each column
+        self.cols_to_dummy = met_props.loc[:,met_props.isna().sum() >0].columns.to_numpy() # adds the nans as a binary features
         self.fitted = True
 
     def transform(self, metabolite_properties):
@@ -374,10 +379,10 @@ class MetaboliteProcessor():
                                         .iloc[:,self.is_informative.to_numpy()]], axis=1)
         for col in self.cols_to_dummy:
             colmean = self.colmeans[col]
-            is_col_na = met_props[col].isna().astype(int)
-            met_props[col+"is_na"] = is_col_na
-        met_props = met_props.replace(np.nan, colmean)
-        met_props = met_props.groupby("CID").min().reset_index()
+            is_col_na = met_props[col].isna().astype(int)  
+            met_props[col+"is_na"] = is_col_na # creates column of binary features
+        met_props = met_props.replace(np.nan, colmean) # replaces by mean
+        met_props = met_props.groupby("CID").min().reset_index() # merges repeated entries
         return met_props
 
     def to_bits_decode(self, seq):
@@ -408,7 +413,7 @@ class MetaboliteDownloader():
 
     def __init__(self, use_cache=True, retries=10):
         self.props = "MolecularWeight,XLogP,TPSA,Complexity,Charge,HBondDonorCount,HBondAcceptorCount,RotatableBondCount,HeavyAtomCount,AtomStereoCount,BondStereoCount,CovalentUnitCount,Volume3D,XStericQuadrupole3D,YStericQuadrupole3D,ZStericQuadrupole3D,FeatureAcceptorCount3D,FeatureDonorCount3D,FeatureAnionCount3D,FeatureCationCount3D,FeatureRingCount3D,FeatureHydrophobeCount3D,Fingerprint2D"
-        self.use_cache = use_cache
+        self.use_cache = use_cache # sets a cache in case a download fails
         if use_cache:
             random_suffix = str(uuid.uuid4())
             self.path = "./cache_" + random_suffix
@@ -420,20 +425,20 @@ class MetaboliteDownloader():
         """
         Downloads the cids from the pubchem API.
         """
-        cids = cids_.astype(str)
+        cids = cids_.astype(str) # gets the cids as str
         dfs = []
         for cid_i in np.arange(0, len(cids), batch):
             cid_subset = cids[cid_i:cid_i+batch]
             cid_string = ",".join(list(cid_subset))
             url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid_string}/property/{self.props}/CSV"
             mets = pd.read_csv(url)
-            path_csv = f"{self.path}/{cid_i}_cache_cids.csv"
-            if self.use_cache & os.path.exists(path_csv):
+            path_csv = f"{self.path}/{cid_i}_cache_cids.csv" 
+            if self.use_cache & os.path.exists(path_csv): # if using cache tries to read the cached file
                 mets = pd.read_csv(path_csv, index_col=0)
                 dfs.append(mets)
             else:
                 successful = False
-                while self.errors < self.retries and not successful:
+                while self.errors < self.retries and not successful: # if a download fails tries to retry
                     try:
                         mets = pd.read_csv(url)
                         mets.to_csv(path_csv)
