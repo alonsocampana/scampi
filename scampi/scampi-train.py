@@ -61,12 +61,12 @@ if __name__ == "__main__":
     else:
         warnings.filterwarnings("ignore")
     if args.dataset == "biosnap":
-        from script_snap import train_model
+        from script_snap import train_model # imports the train model function for snap
     else:
-        from script_stitch import train_model
-    RUN = get_affix(args.dataset,
+        from script_stitch import train_model # imports the train model function for stitch
+    RUN = get_affix(args.dataset, # create the name of the experiment from the provided arguments
                      fraction= args.fraction,
                      permute=args.permute,
                      no_attn=args.no_attn,
                      no_trans=args.no_transformer)
-    train_model(RUN)
+    train_model(RUN) # trains the model
