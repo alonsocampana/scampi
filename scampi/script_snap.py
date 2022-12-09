@@ -47,20 +47,23 @@ def add_negative_sample(df, reference_df, ratio=1):
         return output
 
 def generate_interactions(X_train, merged_data, uniprot):
+    """
+    Generates interactions by adding a negative sample to the positives found in the dataset
+    """
     out = (add_negative_sample(X_train, merged_data)
            .merge(uniprot, how="inner", left_on="Entry", right_on="Entry")
            .drop("Entry", axis=1).reset_index(drop=True).sample(frac=1, replace=False)
            .reset_index(drop=True))
-    valid_seq = out["Sequence"].apply(len) > 12
+    valid_seq = out["Sequence"].apply(len) > 12 # filters sequences that are too short
     return out[valid_seq].fillna(1)
 
 def train_model(RUN):
     merged_data = pd.read_csv(os.path.join(PATH, "data/biosnap/interactions_BIOSNAP.csv"), index_col=0).drop("Sequence", axis=1)
-    if PERMUTE:
+    if PERMUTE: # creates a random permutation of one set
         merged_data["Entry"] = np.random.permutation(merged_data["Entry"])
-    mets = pd.read_csv(os.path.join(PATH, "data/biosnap/processed_biosnap.csv"), index_col=0)
-    uniprot = pd.read_csv(os.path.join(PATH, "data/biosnap/SNAP_seqs.csv"), index_col=0)
-    X_train, X_test = train_test_split(merged_data, train_size = 0.9, random_state=3558)
+    mets = pd.read_csv(os.path.join(PATH, "data/biosnap/processed_biosnap.csv"), index_col=0) # reads the metabolite set
+    uniprot = pd.read_csv(os.path.join(PATH, "data/biosnap/SNAP_seqs.csv"), index_col=0) # reads the sequences for the proteins
+    X_train, X_test = train_test_split(merged_data, train_size = 0.9, random_state=3558) # creates the train/test split
     merged_data = merged_data.assign(score=1)
     def train(model, device, dataloader, loss_fn, optimizer, batch_acc):
         optimizer.zero_grad()
@@ -73,15 +76,15 @@ def train_model(RUN):
             target = batch[2].float().squeeze().to(device)
             loss = loss_fn()
             logits = model(data_met, data_prot).squeeze()
-            y_pred = torch.sigmoid(logits)
+            y_pred = torch.sigmoid(logits) # creates prediction
             output = loss(logits, target)
             output.backward()
-            if (x+1)%batch_acc == 0:
+            if (x+1)%batch_acc == 0: # uses gradient accumulation for making (effectively) bigger batches
                 nn.utils.clip_grad_norm_(model.parameters(), 2)
                 optimizer.step()
                 optimizer.zero_grad()
             try:
-                roc = roc_auc_score(target.cpu().numpy(), y_pred.detach().cpu().numpy())
+                roc = roc_auc_score(target.cpu().numpy(), y_pred.detach().cpu().numpy()) # adds computation to the roc
                 rocs.append(roc)
             except ValueError:
                 pass
@@ -95,7 +98,7 @@ def train_model(RUN):
         gc.collect()
         return np.mean(losses), np.mean(np.array(rocs))
 
-    def test(model, device, dataloader, loss_fn):
+    def test(model, device, dataloader, loss_fn): # tests the performance of the model without training
         model.eval()
         losses = []
         rocs = []
@@ -139,7 +142,7 @@ def train_model(RUN):
     else:
         device = torch.device("cpu")
     best_loss = 5
-    if os.path.exists(path):
+    if os.path.exists(path): # if the model exists, resumes training
         checkpoint = torch.load("../models/"+RUN + "_last.pth")
         start = checkpoint["epoch"] + 1
         model.load_state_dict(checkpoint["model"])
@@ -151,7 +154,7 @@ def train_model(RUN):
         for epoch in range(0, start):
             best_loss = min(float(train_log[str(epoch)]["test_roc"]), best_loss)
         print(f"Resuming training from epoch {start}")
-    else:
+    else: # if not starts training from scratch
         prot_transformer = TransformerProt()
         prot_transformer.load_state_dict(torch.load("2022-02-18 09:21:36.083931.pth", map_location=device))
         model.prot_transformer = prot_transformer.transformer
@@ -172,10 +175,10 @@ def train_model(RUN):
         train_log[epoch] = {}
         if epoch == 1:
             model.module.set_warm()
-        elif epoch in [10, 15, 20, 25, 30, 35]:
+        elif epoch in [10, 15, 20, 25, 30, 35]: # doubles the effective training batch size, decreasing the learning rate
             batch_acc *= 2
             for par in optim.param_groups:
-                par["weight_decay"] = par["weight_decay"]/2
+                par["weight_decay"] = par["weight_decay"]/2 # reduces the weight decay for effective decrease of the learning rate
         train_dataloader = torch.utils.data.dataloader.DataLoader(ProtPairsDataset(generate_interactions(X_train.sample(frac=TRAINING_FRACTION), merged_data, uniprot), mets, length=1024),
                                                                   num_workers=16, drop_last=True, shuffle=False, batch_size = 128)
         print("starting epoch...")
@@ -191,7 +194,7 @@ def train_model(RUN):
         metrics["test_roc"] = str(test_loss[1])
         train_log[epoch] = metrics
         with open("../models/"+RUN+'.json', 'w') as f:
-            json.dump(train_log, f)
+            json.dump(train_log, f) # adds epoch to the logger
         if test_loss[1] > best_loss:
             best_loss = test_loss[0]
             torch.save({"epoch":epoch,
