@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from utils import init_weights
 import os
 
+# Sets the ablation of the model, checking if the ablation setting was set
 try:
     NO_ATTN = bool(os.environ["SCAMPI_NO_ATTN"])
     NO_TRANS = bool(os.environ["SCAMPI_NO_TRANS"])
@@ -26,13 +27,13 @@ class TransformerEncoderGated(nn.TransformerEncoder):
                  encoder_layer: torch.nn.Module,
                  num_layers: int, **kwargs):
         super().__init__(encoder_layer, num_layers, **kwargs)
-        self.gates = nn.Parameter(torch.Tensor(num_layers))
+        self.gates = nn.Parameter(torch.Tensor(num_layers)) # random initialization of the gates
         self.layers = nn.ModuleList([encoder_layer for i in range(num_layers)])
 
     def forward(self, src, mask=None, src_key_padding_mask=None):
-        range_gates = torch.sigmoid(self.gates)
+        range_gates = torch.sigmoid(self.gates) # map gates to the 0-1 range
         for i, layer in enumerate(self.layers):
-            src = (range_gates[i])*layer(src) + (1-range_gates[i])*src
+            src = (range_gates[i])*layer(src) + (1-range_gates[i])*src # apply layers as a convex combination of previous layer and map by next layer 
         return src
 
 
@@ -108,12 +109,12 @@ class N_ResBlocks(nn.Module):
         self.layers = nn.ModuleList([ResBlock(input_dim,
                                               hidden_dim,
                                               p_dropout) for i in range(n_blocks)])
-        self.gates = nn.Parameter(torch.Tensor(n_blocks))
+        self.gates = nn.Parameter(torch.Tensor(n_blocks)) #learnable gates
 
     def forward(self, x):
         range_gates = torch.sigmoid(self.gates)
         for i, layer in enumerate(self.layers):
-            x = (range_gates[i])*layer(x) + (1-range_gates[i])*x
+            x = (range_gates[i])*layer(x) + (1-range_gates[i])*x # apply residual blocks as a convex combination
         return x
 
 
@@ -277,11 +278,11 @@ class IntegrativeModel(nn.Module):
 
     def forward(self, x, y):
         x = self.met_encoder(x)
-        if NO_TRANS:
+        if NO_TRANS: # ablation of the transformer module
             pass
         else:
             y = self.prot_transformer(y)
-        if NO_ATTN:
+        if NO_ATTN: # ablation of the attention module
             x = self.integrative(torch.cat([x, y.mean(axis=1)], axis=1))
         else:
             y = self.attn(x, y)
