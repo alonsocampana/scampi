@@ -47,10 +47,10 @@ def add_negative_sample(df, reference_df, ratio=1):
     return output
 
 
-# In[17]:
-
-
 def generate_interactions(X_train, merged_data, uniprot):
+    """
+    Generates the interaction dataset by adding negative samples.
+    """
     out = (add_negative_sample(X_train, merged_data)
            .merge(uniprot, how="inner", left_on="protein", right_on="Cross-reference (STRING)")
            .drop("Cross-reference (STRING)", axis=1).reset_index(drop=True).sample(frac=1, replace=False)
@@ -59,19 +59,18 @@ def generate_interactions(X_train, merged_data, uniprot):
     return out[valid_seq]
 
 
-# In[18]:
-
 
 def train_model(RUN):
+    # Loads the different partitions used for testing and training
     X_test3 = pd.read_csv("../data/stitch/data_db2.csv", index_col=0)
     X_test2 = pd.read_csv("../data/stitch/data_cb2.csv", index_col=0)
     X_test1 = pd.read_csv("../data/stitch/data_pb2.csv", index_col=0)
     X_train = pd.read_csv("../data/stitch/data_tr2.csv", index_col=0)
-    if PERMUTE:
+    if PERMUTE: # randomization
         X_train["protein"] = np.random.permutation(X_train["protein"])
     mets = pd.read_csv("../data/stitch/processed_mets.csv", index_col=0)
     uniprot = pd.read_csv("../data/stitch/prot.csv")
-    uniprot = uniprot[uniprot["Sequence"].apply(len) <= 1022]
+    uniprot = uniprot[uniprot["Sequence"].apply(len) <= 1022] # discards the proteins that are longer than 1022 amino acids for avoiding truncation
     merged_data = pd.concat([X_train, X_test1, X_test2, X_test3], axis=0, ignore_index=True)
     protein_counts = merged_data["protein"].value_counts()
     protein_array = protein_counts.to_numpy()
@@ -90,14 +89,14 @@ def train_model(RUN):
         for x, batch in enumerate(dataloader):
             data_prot = batch[0].float().to(device)
             data_met = batch[1].float().to(device)
-            weights = batch[2].float().squeeze().to(device)
+            weights = batch[2].float().squeeze().to(device) # weights associated to reweighting (based on stitch score)
             target = batch[3].float().squeeze().to(device)
             loss = loss_fn(weight=weights, reduction="mean").to(device)
             logits = model(data_met, data_prot).squeeze()
             y_pred = torch.sigmoid(logits)
             output = loss(logits, target)
             output.backward()
-            if (x+1) % batch_acc == 0:
+            if (x+1) % batch_acc == 0: # gradient accumulation, effectively increading batch size
                 nn.utils.clip_grad_norm_(model.parameters(), 2)
                 optimizer.step()
                 optimizer.zero_grad()
@@ -211,8 +210,9 @@ def train_model(RUN):
         metrics["train_loss"] = str(train_loss[0])
         metrics["train_roc"] = str(train_loss[1])
         train_log[epoch] = metrics
-        with open("../models/" + RUN+'.json', 'w') as f:
+        with open("../models/" + RUN+'.json', 'w') as f: # save log
             json.dump(train_log, f)
+        # Save model
         torch.save({"epoch": epoch,
                     "optimizer": optim.state_dict(),
                     "model": model.module.state_dict()},
